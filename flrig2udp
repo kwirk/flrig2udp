@@ -1,0 +1,77 @@
+#! /bin/env python
+import argparse
+import socket
+import time
+import xml.etree.ElementTree as ET
+import xmlrpc.client
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(
+        prog="flrig2udp",
+        description="Sends FLRIG radio settings as N1MM+ RadioInfo packets")
+
+    parser.add_argument('--flrig-host', default="127.0.0.1",
+                        help="Host to connect to FLRIG (default: 127.0.0.1)")
+    parser.add_argument('--flrig-port', type=int, default=12345,
+                        help="Port to connect to FLRIG (default: 12345)")
+    parser.add_argument('--udp-host', required=True,
+                        help="Host to send UDP packets to")
+    parser.add_argument('--udp-port', required=True, type=int,
+                        help="Port to send UDP packets to")
+    parser.add_argument('--call', required=True,
+                        help="Callsign to add to RadioInfo message")
+    args = parser.parse_args()
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    doc = ET.Element('RadioInfo')
+    app = ET.SubElement(doc, 'app')
+    app.text = "FLRIG2UDP"
+    connected = ET.SubElement(doc, 'IsConnected')
+    connected.text = "False"
+
+    call = ET.SubElement(doc, 'OpCall')
+    call.text = args.call
+
+    # Will be set below
+    freq = ET.SubElement(doc, 'Freq')
+    txfreq = ET.SubElement(doc, 'TXFreq')
+    mode = ET.SubElement(doc, 'Mode')
+    split = ET.SubElement(doc, 'IsSplit')
+    transmitting = ET.SubElement(doc, 'IsTransmitting')
+    radio = ET.SubElement(doc, 'RadioName')
+    while True:
+        try:
+            flrig_client = xmlrpc.client.ServerProxy(
+                f"http://{args.flrig_host}:{args.flrig_port}")
+
+            while not time.sleep(10):
+
+                split.text = str(bool(flrig_client.rig.get_split()))
+                if split.text == "True":
+                    vfo_AB = flrig_client.rig.get_AB()
+                    freq.text = getattr(
+                        flrig_client.rig, f'get_vfo{vfo_AB}')()
+                    txfreq.text = getattr(
+                        flrig_client.rig,
+                        f'get_vfo{chr(ord(vfo_AB) ^ 3)}')()
+                else:
+                    freq.text = txfreq.text = flrig_client.rig.get_vfo()
+                mode.text = flrig_client.rig.get_mode()
+                transmitting.text = str(bool(flrig_client.rig.get_ptt()))
+                radio.text = flrig_client.rig.get_xcvr()
+                connected.text = "True"  # Obviously connected
+                sock.sendto(
+                    ET.tostring(doc, 'utf-8', xml_declaration=True,
+                                short_empty_elements=False),
+                    (args.udp_host, args.udp_port))
+        except (xmlrpc.client.Error, ConnectionError):
+            time.sleep(1)
+        finally:
+            if connected.text == "True":
+                connected.text = transmitting.text = "False"
+                sock.sendto(
+                    ET.tostring(doc, 'utf-8', xml_declaration=True,
+                                short_empty_elements=False),
+                    (args.udp_host, args.udp_port))
