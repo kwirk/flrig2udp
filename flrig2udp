@@ -49,8 +49,11 @@ if __name__ == "__main__":
             while not time.sleep(10):
 
                 split.text = str(bool(flrig_client.rig.get_split()))
+                transmitting.text = str(bool(flrig_client.rig.get_ptt()))
                 if split.text == "True":
                     vfo_AB = flrig_client.rig.get_AB()
+                    if transmitting.text == "True":
+                        vfo_AB = chr(ord(vfo_AB) ^ 3)  # A/B swap as TX active
                     freq.text = getattr(
                         flrig_client.rig, f'get_vfo{vfo_AB}')()
                     txfreq.text = getattr(
@@ -59,7 +62,6 @@ if __name__ == "__main__":
                 else:
                     freq.text = txfreq.text = flrig_client.rig.get_vfo()
                 mode.text = flrig_client.rig.get_mode()
-                transmitting.text = str(bool(flrig_client.rig.get_ptt()))
                 radio.text = flrig_client.rig.get_xcvr()
                 connected.text = "True"  # Obviously connected
                 sock.sendto(
